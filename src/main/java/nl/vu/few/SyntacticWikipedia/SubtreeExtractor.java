@@ -22,6 +22,7 @@ import nl.vu.cs.ajira.utils.Consts;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -33,6 +34,7 @@ import java.util.StringTokenizer;
 import org.getopt.util.hash.FNV164;
 
 import edu.stanford.nlp.ling.CoreAnnotations;
+import edu.stanford.nlp.ling.CoreLabel;
 import edu.stanford.nlp.ling.IndexedWord;
 import edu.stanford.nlp.pipeline.Annotation;
 import edu.stanford.nlp.pipeline.StanfordCoreNLP;
@@ -59,36 +61,39 @@ public class SubtreeExtractor {
 			int skipIndex = (int) Math.log10(wikiDocId) + 1;
 			documentText = documentText.substring(skipIndex);
 			
+			log.info("Processing docID #"+wikiDocId);
+			
 			Properties props = new Properties();
 	        props.put("annotators", "tokenize,ssplit,pos,depparse");
 	        StanfordCoreNLP pipeline = new StanfordCoreNLP(props);
 	        Annotation annotation = new Annotation(documentText);
+	        
 	        pipeline.annotate(annotation);
 	        List<CoreMap> sentences =  annotation.get(CoreAnnotations.SentencesAnnotation.class);
 	        HashSet<HashSet<IndexedWord>> paths = new HashSet<HashSet<IndexedWord>>();
 	        if (sentences != null) {
-	        	for (CoreMap sentence : sentences) {
-	                // compute sentence hash
+	        	for (CoreMap sentence : sentences) {	        		
+	                // compte sentence hash
 	                String originalSentence = sentence.get(CoreAnnotations.TextAnnotation.class);
 	                hasher.update(originalSentence);
 	                long sentenceHash = hasher.getHash();
-	                //log.info(sentenceHash+" = "+originalSentence);
-	                //Tree tree = sentence.get(TreeCoreAnnotations.TreeAnnotation.class);
-	                //log.info("The first sentence parsed is: "+tree.pennString());
+	                // skip very long sentences
+	                if (sentence.size() > 40) {
+	        			actionOutput.output(new TString("excluded"), new TString(sentenceHash+"\t"+wikiDocId+"\t"+originalSentence));
+	                	continue;
+	        		}
+	                // output adnotated sentence
+	                writeSentence(actionOutput, wikiDocId, sentenceHash, sentence);
+
 	                SemanticGraph sg = sentence.get(SemanticGraphCoreAnnotations.CollapsedDependenciesAnnotation.class);
 	                removePunctuation(sg);
-	                //log.info("SemanticGraph: "+sg.toDotFormat());
-	                if (sg.size() > 40) {
-	                	//log.info("Skipped long sentence of "+sg.size());
-	                	//actionOutput.output(new TLong(0), new TString(wikiDocId+"\t"+sentenceHash+"\t"+originalSentence));
-	                	return;
-	                }
+
 	               
-	               HashSet<ArrayList<IndexedWord>> arcs = allSubtrees(sg, 5);
-	               writeSubtrees(actionOutput, "quadarcs", wikiDocId, sentenceHash, arcs);
-	               //arcs = allSubtrees(sg, 4);
-	               //writeSubtrees(actionOutput, "triarcs", wikiDocId, sentenceHash, arcs);
-	               break;
+	                HashSet<ArrayList<IndexedWord>> arcs = allSubtrees(sg, 5);
+	                writeSubtrees(actionOutput, "quadarcs", wikiDocId, sentenceHash, arcs);
+	                //arcs = allSubtrees(sg, 4);
+	                //writeSubtrees(actionOutput, "triarcs", wikiDocId, sentenceHash, arcs);
+	                break;
 	        	}            
 	        }
 		}
@@ -96,23 +101,46 @@ public class SubtreeExtractor {
 		public void removePunctuation(SemanticGraph sg) {
 			List<IndexedWord> sortedNodes = sg.vertexListSorted();
 	    	for (IndexedWord node : sortedNodes) {
-	    		if (node.word().equals(node.get(CoreAnnotations.PartOfSpeechAnnotation.class))) 
+	    		String pos = node.get(CoreAnnotations.PartOfSpeechAnnotation.class);
+	    		if (pos.length() == 1 || node.word().equals(pos)) 
 	    			sg.removeVertex(node);
 	    	}
 		}
 	    
 	    public void writeSubtrees(ActionOutput actionOutput, String type, int wikiDocId, long sentenceHash, HashSet<ArrayList<IndexedWord>> arcs) throws Exception {
+	    	String prefix = sentenceHash+"\t"+wikiDocId+"\t";
 	    	for (ArrayList<IndexedWord> subtree : arcs) {
-	    		StringBuilder pathString = new StringBuilder();
+	    		StringBuilder pathString = new StringBuilder(prefix);
 	    		int i = 0;
 	    		for (IndexedWord node : subtree) {
 	    			if (i>0)
 	    				pathString.append(" ");
-	    			pathString.append(node.word()+"/"+node.get(CoreAnnotations.PartOfSpeechAnnotation.class));
+	    			pathString.append(node.word());
+	    			pathString.append("/");
+	    			pathString.append(node.get(CoreAnnotations.PartOfSpeechAnnotation.class));
 	    			i++;
 	    		}
-	    		actionOutput.output(new TLong(sentenceHash), new TString(type+"-"+wikiDocId+"\t"+pathString.toString()));
+	    		actionOutput.output(new TString(type), new TString(pathString.toString()));
 	        }
+	    }
+	    
+	    public void writeSentence(ActionOutput actionOutput, int wikiDocId, long sentenceHash, CoreMap sentence) throws Exception {
+	    	List<CoreLabel> words = sentence.get(CoreAnnotations.TokensAnnotation.class);
+	    	
+	    	StringBuilder sentenceString = new StringBuilder(sentenceHash+"\t"+wikiDocId+"\t");
+	    	for (int i=0; i< words.size(); i++) {
+	    		CoreLabel word = words.get(i);
+	    		// remove punctuation
+	    		String pos = word.get(CoreAnnotations.PartOfSpeechAnnotation.class);
+	    		if (pos.length() == 1 || word.word().equals(pos))
+	    			continue;
+	    		if (i>0)
+	    			sentenceString.append(" ");
+	    		sentenceString.append(word.word());
+	    		sentenceString.append("/");
+	    		sentenceString.append(word.get(CoreAnnotations.PartOfSpeechAnnotation.class));
+            }
+	    	actionOutput.output(new TString("sentence"), new TString(sentenceString.toString()));
 	    }
 	   
 	    
@@ -150,7 +178,7 @@ public class SubtreeExtractor {
 	    		}
 	    	}
 	    	
-	    	log.info("---------- Discovered #"+paths.size()+" subtrees");
+	    	//log.info("---------- Discovered #"+paths.size()+" subtrees");
 	    	
 	    	//printPaths(paths, true);
 	    	return paths;
@@ -284,7 +312,8 @@ public class SubtreeExtractor {
 	    	}
 	    }
 	}
-
+	
+	/*
 	public static class Reducer extends Action {
 		private long sentenceHash;
 		
@@ -296,10 +325,6 @@ public class SubtreeExtractor {
 
 			for (Tuple t : values) {
 				TString val = (TString) t.get(0);
-				if (sentenceHash == 0L) {
-					actionOutput.output(new TString("excluded"), val); 
-					continue;
-				}
 				StringTokenizer keyvalTok = new StringTokenizer(val.toString(), "\t");
 				String arcAndDocID = keyvalTok.nextToken();
 				int skipIndex = arcAndDocID.length();
@@ -312,6 +337,7 @@ public class SubtreeExtractor {
 			}
 		}
 	}
+	*/
 
 	public static Job createJob(String inDir, String outDir)
 			throws ActionNotConfiguredException {
@@ -325,7 +351,7 @@ public class SubtreeExtractor {
 
 		// extract subtrees
 		actions.add(ActionFactory.getActionConf(Mapper.class));
-
+		/*
 		// Groups the pairs
 		action = ActionFactory.getActionConf(GroupBy.class);
 		action.setParamStringArray(GroupBy.SA_TUPLE_FIELDS,
@@ -335,10 +361,10 @@ public class SubtreeExtractor {
 
 		// reduce
 		actions.add(ActionFactory.getActionConf(Reducer.class));
-
+		*/
 		// Write the results on files
 		action = ActionFactory.getActionConf(WriteToFiles.class);
-		action.setParamString(WriteToFiles.S_PREFIX_FILE, "quadarcs");
+		action.setParamString(WriteToFiles.S_PREFIX_FILE, "arcs");
 		action.setParamString(WriteToFiles.S_PATH, outDir);
 		actions.add(action);
 
@@ -346,11 +372,6 @@ public class SubtreeExtractor {
 		return job;
 	}
 
-	/**
-	 * Example program: The superfamous WordCount!
-	 * 
-	 * @param args
-	 */
 	public static void main(String[] args) {
 
 		if (args.length < 2) {
