@@ -7,11 +7,8 @@ import nl.vu.cs.ajira.actions.ActionContext;
 import nl.vu.cs.ajira.actions.ActionFactory;
 import nl.vu.cs.ajira.actions.ActionOutput;
 import nl.vu.cs.ajira.actions.ActionSequence;
-import nl.vu.cs.ajira.actions.GroupBy;
 import nl.vu.cs.ajira.actions.ReadFromFiles;
 import nl.vu.cs.ajira.actions.WriteToFiles;
-import nl.vu.cs.ajira.data.types.TBag;
-import nl.vu.cs.ajira.data.types.TLong;
 import nl.vu.cs.ajira.data.types.TString;
 import nl.vu.cs.ajira.data.types.Tuple;
 import nl.vu.cs.ajira.exceptions.ActionNotConfiguredException;
@@ -22,6 +19,8 @@ import nl.vu.cs.ajira.utils.Consts;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -29,7 +28,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Properties;
 import java.util.Scanner;
-import java.util.StringTokenizer;
 
 import org.getopt.util.hash.FNV164;
 
@@ -48,11 +46,28 @@ public class SubtreeExtractor {
 
 	public static class Mapper extends Action {
 		private FNV164 hasher; // very fast collision-rare 64bit hash (FNV1 implementation)
+		
+		Properties props;
+		long sumPreproctime;
+		long ndocs;
+		long nsentences;
+		
+		@Override
+		public void startProcess(ActionContext context) throws Exception {
+			super.startProcess(context);
+			props = new Properties();
+			props.put("annotators", "tokenize,ssplit,pos,depparse");
+			sumPreproctime = 0;
+			nsentences = ndocs = 0;
+		}
+
 		@Override
 		public void process(Tuple tuple, ActionContext context,	ActionOutput actionOutput) throws Exception {
 			hasher = new FNV164();
 			
+			long time = System.currentTimeMillis();
 			String documentText = ((TString) tuple.get(0)).getValue();
+			
 			// get the wikipedia DocumentID as being the first integer on the line
 			Scanner scan = new Scanner(documentText);
 			int wikiDocId = scan.nextInt();
@@ -62,15 +77,21 @@ public class SubtreeExtractor {
 			documentText = documentText.substring(skipIndex);
 			
 			log.info("Processing docID #"+wikiDocId);
-			
-			Properties props = new Properties();
-	        props.put("annotators", "tokenize,ssplit,pos,depparse");
-	        StanfordCoreNLP pipeline = new StanfordCoreNLP(props);
+				
 	        Annotation annotation = new Annotation(documentText);
-	        
+	        StanfordCoreNLP pipeline = new StanfordCoreNLP(props);
 	        pipeline.annotate(annotation);
 	        List<CoreMap> sentences =  annotation.get(CoreAnnotations.SentencesAnnotation.class);
-	        HashSet<HashSet<IndexedWord>> paths = new HashSet<HashSet<IndexedWord>>();
+	        //HashSet<HashSet<IndexedWord>> paths = new HashSet<HashSet<IndexedWord>>();
+	        
+	        long timePreproc = System.currentTimeMillis() - time;
+	        ndocs++;
+	        sumPreproctime += timePreproc;
+	        if (ndocs % 10 == 0) {
+	        	log.info("AVG preproc time: " + (sumPreproctime / ndocs) + " sentencesPerDoc: " + (nsentences / ndocs));
+	        }
+	        nsentences += sentences.size();
+	        
 	        if (sentences != null) {
 	        	for (CoreMap sentence : sentences) {	        		
 	                // compte sentence hash
@@ -373,11 +394,17 @@ public class SubtreeExtractor {
 	}
 
 	public static void main(String[] args) {
-
 		if (args.length < 2) {
 			System.out.println("Usage: " + SubtreeExtractor.class.getSimpleName()
 					+ " <input directory> <output directory>");
 			System.exit(1);
+		}
+		
+		// This is to remove the annoying StanfordNLP logging stuff
+		try {
+		PrintStream fserr = new PrintStream("/dev/null");
+		System.setErr(fserr);		
+		} catch (Exception e) {		
 		}
 
 		// Start up the cluster
