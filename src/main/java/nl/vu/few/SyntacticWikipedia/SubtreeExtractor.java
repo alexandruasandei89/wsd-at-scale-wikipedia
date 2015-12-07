@@ -4,6 +4,7 @@ import nl.vu.cs.ajira.Ajira;
 import nl.vu.cs.ajira.actions.Action;
 import nl.vu.cs.ajira.actions.ActionConf;
 import nl.vu.cs.ajira.actions.ActionContext;
+import nl.vu.cs.ajira.actions.ActionController;
 import nl.vu.cs.ajira.actions.ActionFactory;
 import nl.vu.cs.ajira.actions.ActionOutput;
 import nl.vu.cs.ajira.actions.ActionSequence;
@@ -52,6 +53,15 @@ public class SubtreeExtractor {
 		long ndocs;
 		long nsentences;
 		
+		public static final int TREE_SIZE = 1;
+		private int treeSize = 5;
+		private String treeName = "quadarcs";
+		
+		@Override
+		public void registerActionParameters(ActionConf conf) {
+			conf.registerParameter(TREE_SIZE, "TREE_SIZE", 5, true);
+		}
+		
 		@Override
 		public void startProcess(ActionContext context) throws Exception {
 			super.startProcess(context);
@@ -59,6 +69,20 @@ public class SubtreeExtractor {
 			props.put("annotators", "tokenize,ssplit,pos,depparse");
 			sumPreproctime = 0;
 			nsentences = ndocs = 0;
+			treeSize = getParamInt(TREE_SIZE);
+			switch (treeSize) {
+				case 5:
+					treeName = "quadarcs";
+					break;
+				case 4:
+					treeName = "triarcs";
+					break;
+				case 3:
+					treeName = "biarcs";
+					break;
+				default:
+					treeName = "arcs";
+			}
 		}
 
 		@Override
@@ -110,10 +134,8 @@ public class SubtreeExtractor {
 	                removePunctuation(sg);
 
 	               
-	                HashSet<ArrayList<IndexedWord>> arcs = allSubtrees(sg, 5);
-	                writeSubtrees(actionOutput, "quadarcs", wikiDocId, sentenceHash, arcs);
-	                //arcs = allSubtrees(sg, 4);
-	                //writeSubtrees(actionOutput, "triarcs", wikiDocId, sentenceHash, arcs);
+	                HashSet<ArrayList<IndexedWord>> arcs = allSubtrees(sg, treeSize);
+	                writeSubtrees(actionOutput, treeName, wikiDocId, sentenceHash, arcs);
 	                break;
 	        	}            
 	        }
@@ -360,7 +382,7 @@ public class SubtreeExtractor {
 	}
 	*/
 
-	public static Job createJob(String inDir, String outDir)
+	public static Job createJob(String inDir, String outDir, int treeSize)
 			throws ActionNotConfiguredException {
 		Job job = new Job();
 		ActionSequence actions = new ActionSequence();
@@ -372,6 +394,7 @@ public class SubtreeExtractor {
 
 		// extract subtrees
 		actions.add(ActionFactory.getActionConf(Mapper.class));
+		action.setParamInt(Mapper.TREE_SIZE, treeSize);
 		/*
 		// Groups the pairs
 		action = ActionFactory.getActionConf(GroupBy.class);
@@ -394,9 +417,9 @@ public class SubtreeExtractor {
 	}
 
 	public static void main(String[] args) {
-		if (args.length < 2) {
+		if (args.length < 3) {
 			System.out.println("Usage: " + SubtreeExtractor.class.getSimpleName()
-					+ " <input directory> <output directory>");
+					+ " <input directory> <output directory> <tree size (2-5)>");
 			System.exit(1);
 		}
 		
@@ -421,7 +444,7 @@ public class SubtreeExtractor {
 
 			// Configure the job and launch it!
 			try {
-				Job job = createJob(args[0], args[1]);
+				Job job = createJob(args[0], args[1], Integer.parseInt(args[2]));
 				Submission sub = ajira.waitForCompletion(job);
 				sub.printStatistics();
 				if (sub.getState().equals(Consts.STATE_FAILED)) {
