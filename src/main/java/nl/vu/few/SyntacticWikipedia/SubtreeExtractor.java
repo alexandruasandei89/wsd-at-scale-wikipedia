@@ -31,6 +31,7 @@ import java.util.Properties;
 import java.util.Scanner;
 import java.util.Set;
 
+import org.apache.lucene.analysis.core.StopAnalyzer;
 import org.getopt.util.hash.FNV164;
 
 import edu.stanford.nlp.ling.CoreAnnotations;
@@ -42,7 +43,6 @@ import edu.stanford.nlp.semgraph.SemanticGraph;
 import edu.stanford.nlp.semgraph.SemanticGraphCoreAnnotations;
 import edu.stanford.nlp.util.CoreMap;
 
-import org.apache.lucene.analysis.core.StopAnalyzer;
 
 public class SubtreeExtractor {
 	
@@ -56,15 +56,8 @@ public class SubtreeExtractor {
 		long ndocs;
 		long nsentences;
 		
-		public static final int TREE_SIZE = 1;
 		private int treeSize = 5;
 		private String treeName = "quadarcs";
-		private Set<?> stopWords;
-		
-		@Override
-		public void registerActionParameters(ActionConf conf) {
-			conf.registerParameter(TREE_SIZE, "TREE_SIZE", 5, true);
-		}
 		
 		@Override
 		public void startProcess(ActionContext context) throws Exception {
@@ -73,7 +66,6 @@ public class SubtreeExtractor {
 			props.put("annotators", "tokenize,ssplit,pos,depparse");
 			sumPreproctime = 0;
 			nsentences = ndocs = 0;
-			treeSize = getParamInt(TREE_SIZE);
 			switch (treeSize) {
 				case 5:
 					treeName = "quadarcs";
@@ -87,7 +79,6 @@ public class SubtreeExtractor {
 				default:
 					treeName = "arcs";
 			}
-			stopWords = StopAnalyzer.ENGLISH_STOP_WORDS_SET;
 		}
 
 		@Override
@@ -153,7 +144,7 @@ public class SubtreeExtractor {
 	    		String pos = node.get(CoreAnnotations.PartOfSpeechAnnotation.class);
 	    		if (pos.length() == 1 || node.word().equals(pos)) 
 	    			sg.removeVertex(node);
-	    		else if (removeStopwords && stopWords.contains(node.word())) {
+	    		else if (removeStopwords && StopAnalyzer.ENGLISH_STOP_WORDS_SET.contains(node.word())) {
 	    			sg.removeVertex(node);
 	    		}
 	    	}
@@ -403,7 +394,6 @@ public class SubtreeExtractor {
 
 		// extract subtrees
 		actions.add(ActionFactory.getActionConf(Mapper.class));
-		action.setParamInt(Mapper.TREE_SIZE, treeSize);
 		/*
 		// Groups the pairs
 		action = ActionFactory.getActionConf(GroupBy.class);
