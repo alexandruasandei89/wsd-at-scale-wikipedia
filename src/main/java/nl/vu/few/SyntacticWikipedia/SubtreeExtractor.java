@@ -29,6 +29,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Properties;
 import java.util.Scanner;
+import java.util.Set;
 
 import org.getopt.util.hash.FNV164;
 
@@ -40,6 +41,8 @@ import edu.stanford.nlp.pipeline.StanfordCoreNLP;
 import edu.stanford.nlp.semgraph.SemanticGraph;
 import edu.stanford.nlp.semgraph.SemanticGraphCoreAnnotations;
 import edu.stanford.nlp.util.CoreMap;
+
+import org.apache.lucene.analysis.core.StopAnalyzer;
 
 public class SubtreeExtractor {
 	
@@ -56,6 +59,7 @@ public class SubtreeExtractor {
 		public static final int TREE_SIZE = 1;
 		private int treeSize = 5;
 		private String treeName = "quadarcs";
+		private Set<?> stopWords;
 		
 		@Override
 		public void registerActionParameters(ActionConf conf) {
@@ -83,6 +87,7 @@ public class SubtreeExtractor {
 				default:
 					treeName = "arcs";
 			}
+			stopWords = StopAnalyzer.ENGLISH_STOP_WORDS_SET;
 		}
 
 		@Override
@@ -131,7 +136,7 @@ public class SubtreeExtractor {
 	                writeSentence(actionOutput, wikiDocId, sentenceHash, sentence);
 
 	                SemanticGraph sg = sentence.get(SemanticGraphCoreAnnotations.CollapsedDependenciesAnnotation.class);
-	                removePunctuation(sg);
+	                removeUndesired(sg, true);
 
 	               
 	                HashSet<ArrayList<IndexedWord>> arcs = allSubtrees(sg, treeSize);
@@ -141,15 +146,19 @@ public class SubtreeExtractor {
 	        }
 		}
 		
-		public void removePunctuation(SemanticGraph sg) {
+		// removes punctuation and stopwords
+		public void removeUndesired(SemanticGraph sg, boolean removeStopwords) {
 			List<IndexedWord> sortedNodes = sg.vertexListSorted();
 	    	for (IndexedWord node : sortedNodes) {
 	    		String pos = node.get(CoreAnnotations.PartOfSpeechAnnotation.class);
 	    		if (pos.length() == 1 || node.word().equals(pos)) 
 	    			sg.removeVertex(node);
+	    		else if (removeStopwords && stopWords.contains(node.word())) {
+	    			sg.removeVertex(node);
+	    		}
 	    	}
 		}
-	    
+		
 	    public void writeSubtrees(ActionOutput actionOutput, String type, int wikiDocId, long sentenceHash, HashSet<ArrayList<IndexedWord>> arcs) throws Exception {
 	    	String prefix = sentenceHash+"\t"+wikiDocId+"\t";
 	    	for (ArrayList<IndexedWord> subtree : arcs) {
