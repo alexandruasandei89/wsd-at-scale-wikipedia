@@ -4,7 +4,6 @@ import nl.vu.cs.ajira.Ajira;
 import nl.vu.cs.ajira.actions.Action;
 import nl.vu.cs.ajira.actions.ActionConf;
 import nl.vu.cs.ajira.actions.ActionContext;
-import nl.vu.cs.ajira.actions.ActionController;
 import nl.vu.cs.ajira.actions.ActionFactory;
 import nl.vu.cs.ajira.actions.ActionOutput;
 import nl.vu.cs.ajira.actions.ActionSequence;
@@ -20,8 +19,6 @@ import nl.vu.cs.ajira.utils.Consts;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -29,7 +26,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Properties;
 import java.util.Scanner;
-import java.util.Set;
 
 import org.apache.lucene.analysis.core.StopAnalyzer;
 import org.getopt.util.hash.FNV164;
@@ -62,8 +58,10 @@ public class SubtreeExtractor {
 		@Override
 		public void startProcess(ActionContext context) throws Exception {
 			super.startProcess(context);
+			// configure CoreNLP pipeline
 			props = new Properties();
 			props.put("annotators", "tokenize,ssplit,pos,depparse");
+			// auxiliary variables
 			sumPreproctime = 0;
 			nsentences = ndocs = 0;
 			switch (treeSize) {
@@ -86,6 +84,7 @@ public class SubtreeExtractor {
 			hasher = new FNV164();
 			
 			long time = System.currentTimeMillis();
+			// expected input is: document_ID<tab>document_text
 			String documentText = ((TString) tuple.get(0)).getValue();
 			
 			// get the wikipedia DocumentID as being the first integer on the line
@@ -95,58 +94,58 @@ public class SubtreeExtractor {
 			// remove the DocumentID from content of article
 			int skipIndex = (int) Math.log10(wikiDocId) + 1;
 			documentText = documentText.substring(skipIndex);
-			
-			log.info("Processing docID #"+wikiDocId);
 				
+			// init CoreNLP pipeline
 	        Annotation annotation = new Annotation(documentText);
 	        StanfordCoreNLP pipeline = new StanfordCoreNLP(props);
+	        // start CoreNLP pipeline
 	        pipeline.annotate(annotation);
+	        // get sentences from CoreNLP pipeline (created by ssplit annotator)
 	        List<CoreMap> sentences =  annotation.get(CoreAnnotations.SentencesAnnotation.class);
-	        //HashSet<HashSet<IndexedWord>> paths = new HashSet<HashSet<IndexedWord>>();
-	        
-	        long timePreproc = System.currentTimeMillis() - time;
-	        ndocs++;
-	        sumPreproctime += timePreproc;
-	        if (ndocs % 10 == 0) {
-	        	log.info("AVG preproc time: " + (sumPreproctime / ndocs) + " sentencesPerDoc: " + (nsentences / ndocs));
-	        }
-	        nsentences += sentences.size();
 	        
 	        if (sentences != null) {
 	        	for (CoreMap sentence : sentences) {	        		
-	                // compte sentence hash
+	                // compute sentence hash
 	                String originalSentence = sentence.get(CoreAnnotations.TextAnnotation.class);
 	                hasher.update(originalSentence);
 	                long sentenceHash = hasher.getHash();
 	                // skip very long sentences
 	                if (sentence.size() > 40) {
-	        			actionOutput.output(new TString("excluded"), new TString(sentenceHash+"\t"+wikiDocId+"\t"+originalSentence));
+	        			//actionOutput.output(new TString("excluded"), new TString(sentenceHash+"\t"+wikiDocId+"\t"+originalSentence));
 	                	continue;
 	        		}
-	                // output adnotated sentence
+	                // output annotated sentence
 	                writeSentence(actionOutput, wikiDocId, sentenceHash, sentence);
-
-	                SemanticGraph sg = sentence.get(SemanticGraphCoreAnnotations.CollapsedDependenciesAnnotation.class);
+	                // get syntactic parse tree from CoreNLP pipeline (created by depparse annotator)
+	                SemanticGraph sg = sentence.get(SemanticGraphCoreAnnotations.BasicDependenciesAnnotation.class);
+	                // skip very long sentences
+	                if (sg.vertexSet().size() > 40) {
+	        			//actionOutput.output(new TString("excluded"), new TString(sentenceHash+"\t"+wikiDocId+"\t"+originalSentence));
+	                	continue;
+	        		}
+	                // remove punctuation, gibberish (i.e. malformed HTML tags) and stopwords
 	                removeUndesired(sg, true);
-
-	               
+	                // extract all syntactic tree fragments of given size (in our case, quadarcs)
 	                HashSet<ArrayList<IndexedWord>> arcs = allSubtrees(sg, treeSize);
+	                // write output
 	                writeSubtrees(actionOutput, treeName, wikiDocId, sentenceHash, arcs);
-	                break;
 	        	}            
 	        }
 		}
 		
-		// removes punctuation and stopwords
 		public void removeUndesired(SemanticGraph sg, boolean removeStopwords) {
 			List<IndexedWord> sortedNodes = sg.vertexListSorted();
 	    	for (IndexedWord node : sortedNodes) {
 	    		String pos = node.get(CoreAnnotations.PartOfSpeechAnnotation.class);
-	    		if (pos.length() == 1 || node.word().equals(pos)) 
+	    		// removes punctuation and gibberish 
+	    		if (pos.length() == 1 || node.word().equals(pos)) {
 	    			sg.removeVertex(node);
+	    		}
+	    		// removes stop words
 	    		else if (removeStopwords && StopAnalyzer.ENGLISH_STOP_WORDS_SET.contains(node.word())) {
 	    			sg.removeVertex(node);
 	    		}
+	    		// TODO: might be an interesting idea to remove all words that cannot be found in WordNET
 	    	}
 		}
 		
@@ -203,15 +202,8 @@ public class SubtreeExtractor {
 	    		IndexedWord parent = sg.getParent(node);
 	    		parentMapping.put(node, parent);
 	    	}
-	    	// get paths to root
-	    	/*
-	    	for (IndexedWord node : sg.vertexListSorted()) {
-	    		discoverPathToRoot(node, new ArrayList<IndexedWord>(), paths, parentMapping, childMapping);
-	    	}
-	    	*/
 	    	
 	    	for (IndexedWord node : sortedNodes) {
-	    		//log.info("node "+node.index());
 	    		HashSet<ArrayList<IndexedWord>> incompletePaths = new HashSet<ArrayList<IndexedWord>>();
 	    		discoverSubtrees(node, node.index(), incompletePaths, new HashSet<Integer>(), parentMapping, sg, treeSize);
 	    		// save all subtrees of correct size and discard the rest
@@ -221,8 +213,7 @@ public class SubtreeExtractor {
 	    		}
 	    	}
 	    	
-	    	//log.info("---------- Discovered #"+paths.size()+" subtrees");
-	    	
+	    	// DEBUG:
 	    	//printPaths(paths, true);
 	    	return paths;
 	    }
@@ -247,13 +238,9 @@ public class SubtreeExtractor {
 	    
 	    public void discoverSubtrees (IndexedWord focus, int refID, HashSet<ArrayList<IndexedWord>> incompletePaths, HashSet<Integer> seenIDs, 
 	    		HashMap<IndexedWord,IndexedWord> parentMapping, SemanticGraph sg, int treeSize) {
-	    	//log.info("contains = "+currentPath.contains(focus));
-	    	
-	    	//log.info(currentPath.size() == 5);
-	    	
+
 	    	// make sure to initialize with one non-empty subtree containing current node
 	    	if (incompletePaths.size() < 1) {
-	    		//log.info("incomplete paths being initialised");
 	    		ArrayList<IndexedWord> path = new ArrayList<IndexedWord>();
 	    		path.add(focus);
 	    		incompletePaths.add(path);
@@ -271,9 +258,6 @@ public class SubtreeExtractor {
 	    			break;
 	    		}
 	    	}
-	    	//log.info("path set contains: "+incompletePaths.size());
-	    	//log.info("complete set: "+complete);
-	    	
 	    	// if all paths are complete or have seen all nodes then we have finished exploring the tree
 	    	if (complete == true || seenIDs.size() == parentMapping.keySet().size())	
 	    		return;
@@ -284,16 +268,12 @@ public class SubtreeExtractor {
 	    		return;
 	    	}
 	    	
-	    	//log.info(refID+" -> "+focus.index());
-	    	
 	    	// first, iterate through all children, in order
 	    	ArrayList<IndexedWord> children = (ArrayList)sg.getChildList(focus);	
 	    	if (children != null) {
 	    		for (IndexedWord child : children) {
 	    			// skip children with lower index to prevent going backwards on branches already fully explored
-	        		if (child.index() > refID) {
-	        			//log.info(focus.index()+" descending to "+child.index());
-	        			
+	        		if (child.index() > refID) {	        			
 						HashSet<ArrayList<IndexedWord>> pathClones = new HashSet<ArrayList<IndexedWord>>();
 						// deep copy the subtree candidates to which we can still add nodes
 						for (ArrayList<IndexedWord> clonePath : incompletePaths) {
@@ -302,14 +282,11 @@ public class SubtreeExtractor {
 								// save a clone of the subtree to prevent overriding already existing objects
 								pathClones.add((ArrayList<IndexedWord>)clonePath.clone());
 						}
-
-						//log.info("------ working on clones ------");
-						//printPaths(pathClones, true);
 						
 						// iterate through the incomplete candidates and try to add current child to them
 						for (ArrayList<IndexedWord> path : pathClones) {
 							// check that subtree does not already contain node to be added
-							if (!path.contains(child)) {	// TODO: check if this is actually required
+							if (!path.contains(child)) {
 								// check if the node is connected to any of the current nodes in the subtree
 								boolean validRelationExists = false;
 						
@@ -325,7 +302,7 @@ public class SubtreeExtractor {
 								if (validRelationExists) {		
 									// add child to subtree
 									path.add(child);
-									seenIDs.add(child.index()); // TODO: check if this can be removed
+									seenIDs.add(child.index());
 									// merge new subtree into candidate list
 									incompletePaths.add(path);
 								}							
@@ -342,7 +319,6 @@ public class SubtreeExtractor {
 	    	// make sure the parent has not been added already to the subtree candidates
 	    	if (parent != null && !seenIDs.contains(parent.index())) {
 	    		seenIDs.add(parent.index());
-	    		//log.info(focus.index()+" ascending to "+parent.index());
 	    		
 	    		// add node to subtrees which still have space left
 				for (ArrayList<IndexedWord> path : incompletePaths) {
@@ -350,39 +326,12 @@ public class SubtreeExtractor {
 						path.add(parent);
 					}
 				}
-	    		//log.info("ascending to "+parent.index());
 	    		discoverSubtrees(parent, focus.index(), incompletePaths, seenIDs, parentMapping, sg, treeSize);
 	    	}
 	    }
 	}
-	
-	/*
-	public static class Reducer extends Action {
-		private long sentenceHash;
-		
-		@Override
-		public void process(Tuple tuple, ActionContext context,
-				ActionOutput actionOutput) throws Exception {			
-			sentenceHash = ((TLong) tuple.get(0)).getValue();
-			TBag values = (TBag) tuple.get(1);
 
-			for (Tuple t : values) {
-				TString val = (TString) t.get(0);
-				StringTokenizer keyvalTok = new StringTokenizer(val.toString(), "\t");
-				String arcAndDocID = keyvalTok.nextToken();
-				int skipIndex = arcAndDocID.length();
-				String arcs = val.toString().substring(skipIndex);
-				StringTokenizer idTok = new StringTokenizer(arcAndDocID, "-");
-				String type = idTok.nextToken();
-				String wikiDocID = idTok.nextToken();
-
-				actionOutput.output(new TString(wikiDocID), new TString(sentenceHash+"\t"+arcs)); 			
-			}
-		}
-	}
-	*/
-
-	public static Job createJob(String inDir, String outDir, int treeSize)
+	public static Job createJob(String inDir, String outDir)
 			throws ActionNotConfiguredException {
 		Job job = new Job();
 		ActionSequence actions = new ActionSequence();
@@ -394,17 +343,7 @@ public class SubtreeExtractor {
 
 		// extract subtrees
 		actions.add(ActionFactory.getActionConf(Mapper.class));
-		/*
-		// Groups the pairs
-		action = ActionFactory.getActionConf(GroupBy.class);
-		action.setParamStringArray(GroupBy.SA_TUPLE_FIELDS,
-				TLong.class.getName(), TString.class.getName());
-		action.setParamByteArray(GroupBy.BA_FIELDS_TO_GROUP, (byte) 0);
-		actions.add(action);
-
-		// reduce
-		actions.add(ActionFactory.getActionConf(Reducer.class));
-		*/
+		
 		// Write the results on files
 		action = ActionFactory.getActionConf(WriteToFiles.class);
 		action.setParamString(WriteToFiles.S_PREFIX_FILE, "arcs");
@@ -418,15 +357,16 @@ public class SubtreeExtractor {
 	public static void main(String[] args) {
 		if (args.length < 3) {
 			System.out.println("Usage: " + SubtreeExtractor.class.getSimpleName()
-					+ " <input directory> <output directory> <tree size (2-5)>");
+					+ " <input directory> <output directory>");
 			System.exit(1);
 		}
 		
 		// This is to remove the annoying StanfordNLP logging stuff
 		try {
-		PrintStream fserr = new PrintStream("/dev/null");
-		System.setErr(fserr);		
-		} catch (Exception e) {		
+			PrintStream fserr = new PrintStream("/dev/null");
+			System.setErr(fserr);		
+		} 
+		catch (Exception e) {		
 		}
 
 		// Start up the cluster
@@ -443,7 +383,7 @@ public class SubtreeExtractor {
 
 			// Configure the job and launch it!
 			try {
-				Job job = createJob(args[0], args[1], Integer.parseInt(args[2]));
+				Job job = createJob(args[0], args[1]);
 				Submission sub = ajira.waitForCompletion(job);
 				sub.printStatistics();
 				if (sub.getState().equals(Consts.STATE_FAILED)) {
@@ -453,7 +393,7 @@ public class SubtreeExtractor {
 			} catch (ActionNotConfiguredException e) {
 				log.error("The job was not properly configured", e);
 			} finally {
-				ajira.shutdown();
+				ajira.shutdown();		// WARNING: shutdown fails on large data sets
 			}
 		}
 	}
