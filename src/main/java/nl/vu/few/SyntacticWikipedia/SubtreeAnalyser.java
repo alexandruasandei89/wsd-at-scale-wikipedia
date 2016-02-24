@@ -130,6 +130,9 @@ public class SubtreeAnalyser {
 	                writeSubtrees(actionOutput, treeName, wikiDocId, sentenceHash, arcs);
 	        	}            
 	        }
+	        
+	        time = System.currentTimeMillis() - time;
+	        context.incrCounter("SUBTREE_BUILD_TIME", time);
 		}
 		
 		public void removeUndesired(SemanticGraph sg, boolean removeStopwords) {
@@ -361,7 +364,7 @@ public class SubtreeAnalyser {
 				ActionOutput actionOutput) throws Exception {			
 			sentenceHash = ((TLong) tuple.get(0)).getValue();
 			TBag values = (TBag) tuple.get(1);
-
+			time_ticker = System.currentTimeMillis();
 			for (Tuple t : values) {
 				int skipIndex = 2; 	// start with one to account for the extra tabs
 				TString val = (TString) t.get(0);
@@ -472,7 +475,6 @@ public class SubtreeAnalyser {
 		        		disambiguation_PPR.append(sense.getName());
 		        	else {
 		        		disambiguation_PPR.append("-");
-		        		context.incrCounter("SENSE_MISSING", 1);
 		        	}
 		        	//log.info(word+" had #"+ambiguous_input.get(i).getPolysemy()+" senses");
 		        	disambiguation_PPR.append("/");
@@ -685,7 +687,7 @@ public class SubtreeAnalyser {
 		        	context.incrCounter("SAME_ORDER_MATCHED_EXCLUSIVE_5", 1);
 				
 				if (isTrue(ordinaryMatched)) 
-					context.incrCounter("DIFFERENT_ORDER_MATCHED_SENSE", 1);
+					context.incrCounter("SAME_ORDER_MATCHED_SENSE", 1);
 				if (isTrue(ordinarySequenceMatched))
 					context.incrCounter("SAME_SEQUENCE_MATCHED_SENSE", 1);
 				if (isTrue(arcMatched))

@@ -355,7 +355,7 @@ public class SubtreeExtractor {
 	}
 
 	public static void main(String[] args) {
-		if (args.length < 3) {
+		if (args.length < 2) {
 			System.out.println("Usage: " + SubtreeExtractor.class.getSimpleName()
 					+ " <input directory> <output directory>");
 			System.exit(1);

@@ -136,6 +136,8 @@ public class WordDependencyExtractor {
 	                writeSubtrees(actionOutput, treeName, wikiDocId, sentenceHash, arcs);
 	        	}            
 	        }
+	        time = System.currentTimeMillis() - time;
+	        context.incrCounter("SUBTREE_BUILD_TIME", time);
 		}
 		
 		public void removeUndesired(SemanticGraph sg, boolean removeStopwords) {
@@ -366,7 +368,7 @@ public class WordDependencyExtractor {
 				ActionOutput actionOutput) throws Exception {			
 			sentenceHash = ((TLong) tuple.get(0)).getValue();
 			TBag values = (TBag) tuple.get(1);
-
+			time_ticker = System.currentTimeMillis();
 			for (Tuple t : values) {
 				int skipIndex = 2; 	// start with one to account for the extra tabs
 				TString val = (TString) t.get(0);
