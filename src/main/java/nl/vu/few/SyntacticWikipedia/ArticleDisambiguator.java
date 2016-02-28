@@ -41,6 +41,10 @@ import gov.llnl.ontology.wordnet.OntologyReader;
 import gov.llnl.ontology.wordnet.Synset;
 import gov.llnl.ontology.wordnet.WordNetCorpusReader;
 
+/*
+ * This class takes Wikipedia plaintext as input (one per line, with wikipedia document ID as key)
+ * and creates annotated sentences. Used to produce the wsd-wikipedia-articles data set. 
+ */
 
 public class ArticleDisambiguator {
 	

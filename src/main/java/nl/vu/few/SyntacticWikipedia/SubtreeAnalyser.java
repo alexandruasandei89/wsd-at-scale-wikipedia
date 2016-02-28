@@ -49,6 +49,11 @@ import gov.llnl.ontology.wordnet.OntologyReader;
 import gov.llnl.ontology.wordnet.Synset;
 import gov.llnl.ontology.wordnet.WordNetCorpusReader;
 
+/*
+ * This class takes Wikipedia plaintext as input (one per line, with wikipedia document ID as key)
+ * and creates creates all of the quadarcs for each sentence, exactly as SubtreeExtractor. The sentences 
+ * and quadarcs are disambiguated using PPR and results are analysed by several factors.
+ */
 
 public class SubtreeAnalyser {
 	

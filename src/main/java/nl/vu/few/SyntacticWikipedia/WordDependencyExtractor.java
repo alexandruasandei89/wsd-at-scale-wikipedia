@@ -55,6 +55,12 @@ import gov.llnl.ontology.wordnet.OntologyReader;
 import gov.llnl.ontology.wordnet.Synset;
 import gov.llnl.ontology.wordnet.WordNetCorpusReader;
 
+/*
+ * This class takes Wikipedia plaintext as input (one per line, with wikipedia document ID as key)
+ * and creates creates all of the quadarcs for each sentence. The quadarcs that lead to a correct
+ * disambiguation of a focus word from the original sentence are grouped by frequency. The most
+ * frequent arcs for each word-sense key are then outputed. 
+ */
 
 public class WordDependencyExtractor {
 	

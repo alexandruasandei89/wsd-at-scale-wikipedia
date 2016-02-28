@@ -163,7 +163,8 @@ public class PosVector implements Comparable {
 			if (this.vector[i] > 0) {
 				if (me.length() > 0)
 					me.append("-");
-				me.append(getPos(i)+"#"+this.vector[i]);
+				// frequency (vector[i]) can be removed to get a coarse grained representation
+				me.append(getPos(i)+"#"+this.vector[i]);	
 			}
 		}
 		return me.toString();

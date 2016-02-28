@@ -60,6 +60,9 @@ public class PersonalizedPageRank {
         SynsetPagerank.setupTransitionAttributes(synsetList, synsetMap);
     }
 
+    /*
+     * Newly introduced method, not in the original PPR implementation.
+     */
     protected void preprocess() {
         // run the page rank algorithm over the default graph
         SynsetPagerank.setupTransitionAttributes(synsetList, synsetMap);
@@ -89,9 +92,10 @@ public class PersonalizedPageRank {
             sourceWeights.set(i, 1d/numTerms);
         // run the page rank algorithm over the created graph.
         SynsetPagerank.setupTransitionAttributesLimited(localList, localMap, synsetList.size());
+        // the classic method, without calling preprocess(), should use setupTransitionAttributes()
 
         // use c=0.85 and 20 iterations as the default parameters
-        SparseDoubleVector pageRanks = SynsetPagerank.computePageRank(localList, sourceWeights, .85, 5);
+        SparseDoubleVector pageRanks = SynsetPagerank.computePageRank(localList, sourceWeights, .85, 20);
         // determine the best sense for each ambiguous word
         for (WordAmbiguity contentWord : ambiguous_ngram) {
         	int focusIndex = contentWord.getMapIndex();

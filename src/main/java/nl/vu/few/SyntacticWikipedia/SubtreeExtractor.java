@@ -39,6 +39,11 @@ import edu.stanford.nlp.semgraph.SemanticGraph;
 import edu.stanford.nlp.semgraph.SemanticGraphCoreAnnotations;
 import edu.stanford.nlp.util.CoreMap;
 
+/*
+ * This class takes Wikipedia plaintext as input (one per line, with wikipedia document ID as key)
+ * and creates creates all of the quadarcs for each sentence.
+ * WARNING: output can be quite large, filtering out the bad arcs is very important.
+ */
 
 public class SubtreeExtractor {
 	

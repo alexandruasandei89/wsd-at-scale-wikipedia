@@ -128,6 +128,11 @@ public class SynsetPagerank {
             setTransitionAttribute(synset, synsetMap);
     }
     
+    /*
+     * Newly introduced method, for PPR, used only in combination with PPR.preprocess()
+     * It skips setting the transition attributes for the nodes that are always in the graph,
+     * as opposed to the newly introduced "fake" nodes used to bias based on context.
+     */
     public static void setupTransitionAttributesLimited(
             List<Synset> synsetList,
             Map<Synset, Integer> synsetMap,
