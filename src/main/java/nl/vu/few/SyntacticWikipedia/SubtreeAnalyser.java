@@ -607,9 +607,6 @@ public class SubtreeAnalyser {
 					
 				}
 				
-				if (arc.size() < 5) {
-					log.info("ERROR, too small: ["+type+"] "+disambiguation);
-				}
 				
 				// first
 				arcs.add(arc); 					

@@ -479,7 +479,6 @@ public class WordDependencyExtractor {
 		        		disambiguation_PPR.append(sense.getName());
 		        	else {
 		        		disambiguation_PPR.append("-");
-		        		context.incrCounter("SENSE_MISSING", 1);
 		        	}
 		        	disambiguation_PPR.append("/");
 		        	disambiguation_PPR.append(pos);
@@ -721,26 +720,20 @@ public class WordDependencyExtractor {
 	
 	public static class GroupByWordSense extends Action {
 		private String wordSenseKey;
-		private HashMap<String, Long> groupedByFrequency;
-		
-		@Override
-		public void startProcess(ActionContext context) throws Exception {
-			super.startProcess(context);
-			this.groupedByFrequency = new HashMap<String,Long>();
-		}
 		
 		@Override
 		public void process(Tuple tuple, ActionContext context,
 				ActionOutput actionOutput) throws Exception {			
 			wordSenseKey = ((TString) tuple.get(0)).getValue();
 			TBag values = (TBag) tuple.get(1);
+			HashMap<String, Long> groupedByFrequency = new HashMap<String,Long>();
         
 			for (Tuple t : values) {
 				TString val = (TString) t.get(0);
-				add(val.toString());
+				add(groupedByFrequency,val.toString());
 			}
-			
-			long highestFrequency = -1;
+			log.info(">>>> "+wordSenseKey);
+			long highestFrequency = -1L;
 			String highestFrequencyKey = "";
 			Iterator it = groupedByFrequency.entrySet().iterator();
 			while (it.hasNext()) {
@@ -749,13 +742,14 @@ public class WordDependencyExtractor {
 		        if ((Long)pair.getValue() > highestFrequency) {
 		        	highestFrequency = (Long)pair.getValue();
 		        	highestFrequencyKey = pair.getKey().toString();
+		        	log.info(" (!) (!)  #"+highestFrequency+" = "+highestFrequencyKey);
 		        }
 		    }
 			
 			actionOutput.output(new TString(wordSenseKey), new TString(highestFrequencyKey));
 		}
 		
-		private void add( String element  ) { 
+		private void add(HashMap<String, Long> groupedByFrequency, String element  ) { 
 	        if( !groupedByFrequency.containsKey( element ) ){
 	        	groupedByFrequency.put( element, 1L );
 	        } else { 
@@ -804,7 +798,7 @@ public class WordDependencyExtractor {
 		action.setParamByteArray(GroupBy.BA_FIELDS_TO_GROUP, (byte) 0);
 		actions.add(action);
 		
-		// analyse
+		// extract highest frequency groups
 		actions.add(ActionFactory.getActionConf(GroupByWordSense.class));
 		
 		// Write the results on files
